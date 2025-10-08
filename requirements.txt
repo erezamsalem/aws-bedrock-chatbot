@@ -1,0 +1,6 @@
+streamlit
+langchain
+langchain-community
+boto3
+mysql-connector-python
+SQLAlchemy

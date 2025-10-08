@@ -1,0 +1,8 @@
+# Ignore environment files
+.env
+
+# Ignore python cache and virtual environments
+__pycache__/
+.venv/
+# Ignore Kubernetes secrets
+secret.yaml

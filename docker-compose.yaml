@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  # The service for your Streamlit application
+  app:
+    build: .
+    ports:
+      - "8501:8501"
+    environment:
+      # --- Database Configuration ---
+      # 'db' here is the hostname of the MySQL service below
+      - DB_HOST=db
+      - DB_USER=root
+      - DB_PASSWORD=${DB_PASSWORD} # <-- Reads from .env
+      - DB_DATABASE=ai_database
+
+      # --- AWS Credentials ---
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID} # <-- Reads from .env
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY} # <-- Reads from .env
+      - AWS_REGION=eu-west-1
+    depends_on:
+      db:
+        condition: service_healthy # Waits for the db to be ready
+    networks:
+      - chat-network
+
+  # The service for the MySQL database
+  db:
+    image: mysql:8.0
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD} # <-- Reads from .env
+      MYSQL_DATABASE: ai_database
+    volumes:
+      - db_data:/var/lib/mysql # Persists database data on your host machine
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - chat-network
+
+# Defines the volume for data persistence
+volumes:
+  db_data:
+
+# Defines the network for services to communicate
+networks:
+  chat-network:
+    driver: bridge

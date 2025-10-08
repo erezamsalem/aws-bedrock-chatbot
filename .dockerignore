@@ -1,0 +1,13 @@
+# Ignore Docker specific files
+.dockerignore
+Dockerfile
+docker-compose.yaml
+
+# Ignore git and environment files
+.git
+.gitignore
+.env
+
+# Ignore python cache and virtual environments
+__pycache__/
+.venv/
