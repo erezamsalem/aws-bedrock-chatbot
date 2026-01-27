@@ -1,69 +1,72 @@
-# Import functions
 import os
-from langchain.memory import ConversationBufferMemory
-from langchain_community.chat_models import BedrockChat
-from langchain.chains import ConversationChain
+# --- NEW IMPORTS FOR LOGGING ---
+from langchain.globals import set_debug, set_verbose
+# --- END NEW IMPORTS ---
+from langchain_aws import ChatBedrock
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_community.chat_message_histories import SQLChatMessageHistory
 
 # --- Database Connection Details ---
-# Read database configuration from environment variables for Docker
 DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
 DB_USER = os.getenv("DB_USER", "root")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "test1234")
 DB_DATABASE = os.getenv("DB_DATABASE", "ai_database")
 
-# This is the connection string LangChain will use
+# Connection string for MySQL
 CONNECTION_STRING = f"mysql+mysqlconnector://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/{DB_DATABASE}"
-# --- End of Database Connection Details ---
 
-
-# function to invoke model
 def get_llm():
-    llm = BedrockChat(
-        region_name=os.getenv("AWS_REGION", "eu-west-1"), # Read AWS region from environment
-        model_id="amazon.titan-text-express-v1", #set the foundation model
-        model_kwargs= {                      #configure the properties for Titan
-            "temperature": 1,
-            "topP": 0.5,
-            "maxTokenCount": 400, # Increased token count for better responses
+    """
+    Initializes the Bedrock LLM using the Amazon Nova Lite regional inference profile.
+    Using 'eu.' prefix resolves the 'on-demand throughput isn't supported' error.
+    """
+    return ChatBedrock(
+        region_name=os.getenv("AWS_REGION", "eu-west-1"),
+        # The 'eu.' prefix enables standard on-demand regional inference
+        model_id="eu.amazon.nova-lite-v1:0", 
+        model_kwargs={
+            "temperature": 0.5,
+            "topP": 0.9,
+            "maxTokens": 512, # Nova models use 'maxTokens'
         }
     )
-    return llm
 
-# New function to get chat history from the database for a specific session
 def get_history(session_id):
+    """Retrieves chat history from MySQL for the given session."""
     return SQLChatMessageHistory(
         session_id=session_id,
-        connection=CONNECTION_STRING, # <-- Updated to 'connection' to fix warning
+        connection=CONNECTION_STRING,
         table_name="message_store"
     )
 
-##Create a chat client function
 def get_chat_response(input_text, session_id):
-
+    """Executes the chat chain with history persistence."""
     llm = get_llm()
+    
+    # Structure the conversation with a system instruction
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", "You are a helpful AI assistant. Provide clear and concise answers."),
+        MessagesPlaceholder(variable_name="history"),
+        ("human", "{input}"),
+    ])
 
-    # Get the history from the database
-    message_history = get_history(session_id)
+    # Define the chain logic (Prompt -> LLM)
+    chain = prompt | llm
 
-    # Create a memory object that uses our database-backed history
-    memory = ConversationBufferMemory(
-        memory_key="history",
-        chat_memory=message_history,
-        return_messages=True
+    # Attach the MySQL history logic
+    chain_with_history = RunnableWithMessageHistory(
+        chain,
+        get_history,
+        input_messages_key="input",
+        history_messages_key="history",
     )
 
-    conversation_with_memory = ConversationChain(
-        llm = llm,
-        memory = memory,
-        verbose = True
+    # Execute the chain
+    # This automatically handles fetching history, inference, and saving the response
+    response = chain_with_history.invoke(
+        {"input": input_text},
+        config={"configurable": {"session_id": session_id}}
     )
 
-    # When we invoke the chain, it will automatically:
-    # 1. Load the history from the database.
-    # 2. Add the new user message.
-    # 3. Call the AI model.
-    # 4. Save the new user message and the AI response back to the database.
-    chat_response = conversation_with_memory.invoke(input = input_text)
-
-    return chat_response['response']
+    return response.content
