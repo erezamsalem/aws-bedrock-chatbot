@@ -1,11 +1,14 @@
 import os
-# --- NEW IMPORTS FOR LOGGING ---
-from langchain.globals import set_debug, set_verbose
-# --- END NEW IMPORTS ---
+# Correct import path for global settings in LangChain v0.3.0+
+from langchain_core.globals import set_debug, set_verbose
 from langchain_aws import ChatBedrock
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_community.chat_message_histories import SQLChatMessageHistory
+
+# Enable tracing for your terminal logs
+set_debug(True)
+set_verbose(True)
 
 # --- Database Connection Details ---
 DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
@@ -17,13 +20,10 @@ DB_DATABASE = os.getenv("DB_DATABASE", "ai_database")
 CONNECTION_STRING = f"mysql+mysqlconnector://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/{DB_DATABASE}"
 
 def get_llm():
-    """
-    Initializes the Bedrock LLM using the Amazon Nova Lite regional inference profile.
-    Using 'eu.' prefix resolves the 'on-demand throughput isn't supported' error.
-    """
+    """Initializes the Bedrock LLM using the Amazon Nova Lite regional inference profile."""
     return ChatBedrock(
         region_name=os.getenv("AWS_REGION", "eu-west-1"),
-        # The 'eu.' prefix enables standard on-demand regional inference
+        # 'eu.' prefix is REQUIRED for on-demand regional inference profiles
         model_id="eu.amazon.nova-lite-v1:0", 
         model_kwargs={
             "temperature": 0.5,
@@ -44,17 +44,14 @@ def get_chat_response(input_text, session_id):
     """Executes the chat chain with history persistence."""
     llm = get_llm()
     
-    # Structure the conversation with a system instruction
     prompt = ChatPromptTemplate.from_messages([
         ("system", "You are a helpful AI assistant. Provide clear and concise answers."),
         MessagesPlaceholder(variable_name="history"),
         ("human", "{input}"),
     ])
 
-    # Define the chain logic (Prompt -> LLM)
     chain = prompt | llm
 
-    # Attach the MySQL history logic
     chain_with_history = RunnableWithMessageHistory(
         chain,
         get_history,
@@ -62,8 +59,6 @@ def get_chat_response(input_text, session_id):
         history_messages_key="history",
     )
 
-    # Execute the chain
-    # This automatically handles fetching history, inference, and saving the response
     response = chain_with_history.invoke(
         {"input": input_text},
         config={"configurable": {"session_id": session_id}}
